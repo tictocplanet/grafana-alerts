@@ -12,7 +12,7 @@ __copyright__ = "Copyright 2015, Pablo Alcaraz"
 __license__ = "Apache Software License V2.0"
 
 _GRAFANA_URL_PATH_OBTAIN_DASHBOARDS = 'api/search?limit=10&query=&tag=monitored'
-_GRAFANA_URL_PATH_DASHBOARD = 'api/dashboards/db/{slug}'
+_GRAFANA_URL_PATH_DASHBOARD = 'api/dashboards/{uri}'
 _GRAFANA_URL_PATH_OBTAIN_METRICS = 'api/datasources/proxy/1/render'
 
 
@@ -40,8 +40,7 @@ class AlertCheckerCoordinator:
         for d in dashboard_data_list:
             try:
                 print "Dashboard: " + d['title']
-                # {u'slug': u'typrod-storage', u'tags': [], u'isStarred': False, u'id': 4, u'title': u'TyProd Storage'}
-                dashboard = Dashboard(self.configuration.grafana_url, self.configuration.grafana_token, d['title'], d['slug'], d['tags'])
+                dashboard = Dashboard(self.configuration.grafana_url, self.configuration.grafana_token, d['title'], d['uri'], d['tags'])
                 alert_checkers = dashboard.obtain_alert_checkers()
                 print alert_checkers
 
@@ -97,7 +96,7 @@ class AlertChecker:
         """get metrics from grafana server"""
         for grafana_target in self.grafana_targets:
             if not hasattr(grafana_target, 'hide') or not grafana_target['hide']:
-                target = grafana_target['target']
+                target = grafana_target['expr']
                 post_parameters = "target={target}&from=-60s&until=now&format=json&maxDataPoints=100".format(
                     target=target)
                 request = urllib2.Request(self.grafana_url + _GRAFANA_URL_PATH_OBTAIN_METRICS,
@@ -157,16 +156,16 @@ class DashboardScanner:
         contents = urllib2.urlopen(request).read()
         print contents
         data = json.loads(contents)
-        dashboards = jmespath.search('dashboards', data)
-        return dashboards
+        #dashboards = jmespath.search('dashboards', data)
+        return data
 
 
 class Dashboard:
-    def __init__(self, grafana_url, grafana_token, title, slug, tags):
+    def __init__(self, grafana_url, grafana_token, title, uri, tags):
         self.grafana_url = grafana_url
         self.grafana_token = grafana_token
         self.title = title
-        self.slug = slug
+        self.uri = uri
         self.tags = tags
 
     def obtain_alert_checkers(self):
@@ -177,7 +176,7 @@ class Dashboard:
 
     def _obtain_dashboard_rows(self):
         """Get a list of dashboard rows."""
-        request = urllib2.Request(self.grafana_url + _GRAFANA_URL_PATH_DASHBOARD.format(slug=self.slug),
+        request = urllib2.Request(self.grafana_url + _GRAFANA_URL_PATH_DASHBOARD.format(uri=self.uri),
                                   headers={"Accept": "application/json",
                                            "Authorization": "Bearer " + self.grafana_token})
         contents = urllib2.urlopen(request).read()
@@ -187,7 +186,7 @@ class Dashboard:
         print contents
         try:
             data = json.loads(contents)
-            dashboard = jmespath.search('model.rows[*].panels[*]', data)
+            dashboard = jmespath.search('dashboard.rows[*].panels[*]', data)
             return dashboard
         except ValueError:
             raise NotMonitoreableDashboard(
